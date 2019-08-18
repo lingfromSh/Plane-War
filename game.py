@@ -298,4 +298,4 @@ class Game:
             if pygame.Rect.colliderect(enemy.rect, player.rect):
                 enemy.kill()
                 print("得分:", player.score)
-                self.end()
+                # self.end()
