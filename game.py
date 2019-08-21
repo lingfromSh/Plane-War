@@ -99,6 +99,7 @@ class Plane(AniElement):
                 del self.bullet_group[index]
 
     def be_attacked(self, damage):
+        print("受到伤害:", damage)
         self._hp -= damage
         if self._hp <= 0:
             self.kill()
@@ -106,11 +107,11 @@ class Plane(AniElement):
 
 # 子弹
 class Bullet(AniElement):
-    def __init__(self, type=0):
+    def __init__(self, type=0, damage=10):
         # self.type = type
         self.type = type
         self.life = 1
-        self.damage = 10
+        self.damage = damage
         self.speedY = 10
         if type == 0:
             super().__init__(BULLET1_IMG)
@@ -130,24 +131,28 @@ class Bullet(AniElement):
         self.rect.centery = y
 
     def generate(self):
-        return Bullet(self.type)
+        return Bullet(self.type, self.damage)
 
     def kill(self):
         self.life = 0
 
+    def set_damage(self, damage):
+        self.damage = damage
 
 # 敌机
+
+
 class Enemy(Plane):
     def __init__(self, type=1):
-        if type == 1:                # 小型
+        if type <= 60:                # 小型
             data = {
                 "image_src": ENEMY1_IMG, "hp": 10, "speedX": 0, "speedY": 5, "life": 1, "bullet": None
             }
-        elif type == 2:              # 中型
+        elif type <= 90:              # 中型
             data = {
                 "image_src": ENEMY2_IMG, "hp": 30, "speedX": 0, "speedY": 3, "life": 1, "bullet": None
             }
-        elif type == 3:              # 大型
+        elif type <= 100:              # 大型
             data = {
                 "image_src": ENEMY3_IMG, "hp": 150, "speedX": 0, "speedY": 1, "life": 1, "bullet": None
             }
@@ -160,6 +165,7 @@ class Enemy(Plane):
 
 # 玩家飞机
 class Player(Plane):
+    # TODO: 击落一定飞机，提升等级
     def __init__(self, image_src=PLAYER_IMG, hp=10, speed=10, speedX=0, speedY=0, life=1, bullet=Bullet(0)):
         super().__init__(image_src=PLAYER_IMG, hp=hp, speedX=speedX,
                          speedY=speedY, life=life, bullet=bullet)
@@ -175,7 +181,7 @@ class Player(Plane):
         self.last_pos = (self.rect.centerx, self.rect.centery)
 
     def fly(self, direction: str = "stay"):
-        # TODO: 飞行界限判断不准确, rect不熟悉
+        # FIXME: 飞行界限判断不准确, rect不熟悉
         if direction == "right":
             self.rect.centerx += self.speed
         elif direction == "left":
@@ -198,15 +204,38 @@ class Player(Plane):
 
     def add_score(self, value):
         self.score += value
+        if self.score // self.bullet.damage >= 100:
+            self.level_up()
+            self.update_bullet_damage()
+            self.update_bullet_tension()
+        elif self.score // self.bullet.damage >= 50:
+            self.level_up()
+            self.update_bullet_damage()
 
     def level_up(self):
         self.level += 1
+        print("升级,当前等级:", self.level)
 
     def update_bullet_damage(self):
-        self.bullet.damage += 5
+        self.bullet.set_damage(self.bullet.damage+5)
+        print("升级,当前子弹伤害:", self.bullet.damage)
 
     def update_bullet_tension(self):
-        pygame.time.set_timer(PLAYER_FIRE_EVENT, 400)
+        Game.set_player_fire_event_interval(
+            int(Game.player_fire_interval*0.98))
+        print("升级,当前子弹攻击速度:", Game.player_fire_interval)
+
+    def get_score(self):
+        return self.score
+
+    def get_level(self):
+        return self.level
+
+    def get_last_pos(self):
+        return self.last_pos
+
+    def get_speed(self):
+        return self.speed
 
 
 class Background(AniElement):
@@ -214,7 +243,7 @@ class Background(AniElement):
         super().__init__(image_src)
         self.rect.centerx = 0
         self.is_alt = is_alt
-        if not self.is_alt:
+        if self.is_alt:
             self.rect.centery = -self.rect.height
         else:
             self.rect.centery = 0
@@ -222,12 +251,45 @@ class Background(AniElement):
 
     def move(self):
         self.rect.centery += self.speedY
-        if self.rect.centery > self.rect.height:
+        if self.rect.centery > self.rect.height and not self.is_alt:
             self.rect.centery = 0
-            if self.is_alt:
-                self.rect.centery = -self.rect.height
+        elif self.rect.centery > 0 and self.is_alt:
+            self.rect.centery = - self.rect.height
 
 
+class ScoreInfo:
+    def __init__(self, score: int = 0):
+        self.score = score
+        self.text = "分数:\t\t" + str(self.score)
+        self.font = pygame.font.Font(SIYUAN_HEITI_MEDIUM_SOURCE, 18)
+        self.surf = self.font.render(self.text, 1, (0, 0, 0))
+
+    def update(self, score):
+        self.score = score
+        self.text = "分数:\t\t" + str(self.score)
+
+    def add(self, increment):
+        self.score += increment
+
+    def minus(self, decrement):
+        self.score -= decrement
+
+    def multiply(self, multiplier):
+        self.score *= multiplier
+
+    def divide(self, divisor):
+        self.score /= divisor
+
+    def draw(self, screen):
+        # 如果screen类型错误 , 报错
+        self.surf = self.font.render(self.text, 1, (0, 0, 0))
+        assert [isinstance(screen, pygame.Surface),
+                "screen类型错误,应该是pygame.Surface"]
+
+        screen.blit(self.surf, [360, 40])
+
+
+# FIXME: 生成的飞机比例有误，高难度的太多
 class Game:
     def __init__(self, screen):
         # Game Control Class
@@ -235,14 +297,36 @@ class Game:
         self.player = Player()
         self.background = Background()
         self.background2 = Background(is_alt=True)
+        self.scoreinfo = ScoreInfo()
         self.enemy_group = list()
+        self.create_enemey_event_interval = 1000                 # 毫秒
+        self.player_fire_event_interval = 500                    # 毫秒
         # 每1.5秒生成一个敌机
         pygame.time.set_timer(CREATE_ENEMY_EVENT, 1000)
         # 每0.5秒发射子弹
-        pygame.time.set_timer(PLAYER_FIRE_EVENT, 200)
+        pygame.time.set_timer(PLAYER_FIRE_EVENT, 500)
+
+    def set_player_fire_event_interval(self, interval):
+        self.player_fire_event_interval = interval
+        pygame.time.set_timer(PLAYER_FIRE_EVENT, interval)
+
+    def set_create_enemy_event_interval(self, interval):
+        self.create_enemey_event_interval = interval
+        pygame.time.set_timer(CREATE_ENEMY_EVENT, interval)
+
+    @staticmethod
+    @property
+    def create_enemey_interval(self):
+        return self.create_enemey_event_interval
+
+    @staticmethod
+    @property
+    def player_fire_interval(self):
+        return self.player_fire_event_interval
 
     def start(self):
         # 开始游戏
+        self.scoreinfo.draw(self.screen)
         self.background.draw(self.screen)
         self.background2.draw(self.screen)
         self.player.draw(self.screen)
@@ -263,15 +347,17 @@ class Game:
 
     def element_update(self):
         # 更新画面
-        self.screen.fill((255, 255, 255))
+        self.screen.fill((255,255,255))
         self.background.move()
         self.background2.move()
         self.player.fly()
         self.collision_check()
+        self.scoreinfo.update(self.player.get_score())
         self.background.draw(self.screen)
         self.background2.draw(self.screen)
         self.player.attack(self.screen)
         self.player.draw(self.screen)
+        self.scoreinfo.draw(self.screen)
         for index, enemy in enumerate(self.enemy_group):
             if not enemy.life < 1:
                 enemy.fly()
@@ -281,7 +367,7 @@ class Game:
         pygame.display.flip()
 
     def collision_check(self):
-        # TODO: 需要修正一些失效的碰撞反应
+        # FIXME: 需要修正一些失效的碰撞反应
         # 检测碰撞
         enemy_group = self.enemy_group
         bullet_group = self.player.bullet_group

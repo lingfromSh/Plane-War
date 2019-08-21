@@ -61,7 +61,7 @@ class PlaneGame:
             elif event.type == CREATE_ENEMY_EVENT and mode == UI_MODE[1]:
                 import random
                 # 创建一个敌机(随机生成)
-                type = random.randint(1, 3)
+                type = random.randint(1, 100)
                 enemy = Enemy(type)
                 self.ui_handler.game_control.add_enemy_group(enemy)
             elif event.type == PLAYER_FIRE_EVENT and mode == UI_MODE[1]:
